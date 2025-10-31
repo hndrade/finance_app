@@ -199,8 +199,8 @@ elif menu == '💸 Transações':
                                             vencimento))
 
                     faturas = {
-                        f'Fatura Atual ({fatura_atual.strftime(\"%b/%Y\")})': fatura_atual.strftime('%Y-%m-%d'),
-                        f'Próxima Fatura ({fatura_prox.strftime(\"%b/%Y\")})': fatura_prox.strftime('%Y-%m-%d')
+                        f'Fatura Atual ({fatura_atual.strftime(\'%b/%Y\')})': fatura_atual.strftime('%Y-%m-%d'),
+                        f'Próxima Fatura ({fatura_prox.strftime(\'%b/%Y\')})': fatura_prox.strftime('%Y-%m-%d')
                     }
                     fatura_escolhida = st.selectbox('Selecione a Fatura', list(faturas.keys()))
             else:
@@ -335,4 +335,5 @@ elif menu == '📤 Exportar / Importar':
                 df_new['id'] = range(1, len(df_new) + 1)
                 save_json(FILES[tabela_tipo], df_new.to_dict(orient='records'))
                 st.warning(f'{tabela_tipo} substituído ({len(df_new)} registros).')
+
 
