@@ -153,6 +153,7 @@ elif menu == '💳 Cartões':
 # ================= TRANSAÇÕES =================
 elif menu == '💸 Transações':
     st.subheader('Lançamentos Financeiros')
+
     contas_nomes = [a['name'] for a in accounts]
     cartoes_nomes = [c['name'] for c in cards]
     categorias_nomes = [c['name'] for c in categories]
@@ -173,30 +174,41 @@ elif menu == '💸 Transações':
                 origem_nome = st.selectbox('Selecionar Conta', contas_nomes)
             else:
                 st.warning('Nenhuma conta cadastrada!')
+
         else:
             if cartoes_nomes:
                 origem_nome = st.selectbox('Selecionar Cartão', cartoes_nomes)
                 cartao = next((c for c in cards if c['name'] == origem_nome), None)
+
                 if cartao:
                     hoje = date.today()
-                    mes_atual = hoje.month
-                    ano_atual = hoje.year
+                    ano = hoje.year
+                    mes = hoje.month
                     fechamento = cartao['closing_day']
                     vencimento = cartao['due_day']
 
-                    # Determina fatura atual e próxima
+                    # Calcula faturas atual e próxima com base nas datas de fechamento e vencimento
                     if hoje.day <= fechamento:
-                        fatura_atual = date(ano_atual, mes_atual, vencimento)
-                        fatura_prox = date(ano_atual if mes_atual < 12 else ano_atual + 1, mes_atual + 1 if mes_atual < 12 else 1, vencimento)
+                        fatura_atual = date(ano, mes, vencimento)
+                        prox_mes = mes + 1 if mes < 12 else 1
+                        prox_ano = ano + 1 if mes == 12 else ano
+                        fatura_prox = date(prox_ano, prox_mes, vencimento)
                     else:
-                        fatura_atual = date(ano_atual if mes_atual < 12 else ano_atual + 1, mes_atual + 1 if mes_atual < 12 else 1, vencimento)
-                        fatura_prox = date(ano_atual if mes_atual < 11 else ano_atual + 1, mes_atual + 2 if mes_atual < 11 else (mes_atual + 2) % 12, vencimento)
+                        prox_mes = mes + 1 if mes < 12 else 1
+                        prox_ano = ano + 1 if mes == 12 else ano
+                        fatura_atual = date(prox_ano, prox_mes, vencimento)
+                        prox_mes2 = prox_mes + 1 if prox_mes < 12 else 1
+                        prox_ano2 = prox_ano + 1 if prox_mes == 12 else prox_ano
+                        fatura_prox = date(prox_ano2, prox_mes2, vencimento)
 
                     faturas = {
                         f"Fatura Atual ({fatura_atual.strftime('%b/%Y')})": fatura_atual.strftime('%Y-%m-%d'),
                         f"Próxima Fatura ({fatura_prox.strftime('%b/%Y')})": fatura_prox.strftime('%Y-%m-%d')
                     }
+
                     fatura_escolhida = st.selectbox('Selecione a Fatura', list(faturas.keys()))
+                else:
+                    st.warning('Erro ao carregar o cartão selecionado.')
             else:
                 st.warning('Nenhum cartão cadastrado!')
 
@@ -204,7 +216,10 @@ elif menu == '💸 Transações':
 
     if enviar and origem_nome:
         amount = valor if tipo == 'Receita' else -valor
-        invoice_date = faturas[fatura_escolhida] if fatura_escolhida else None
+        invoice_date = None
+        if origem == 'Cartão de Crédito' and fatura_escolhida:
+            invoice_date = faturas[fatura_escolhida]
+
         nova_tx = {
             'id': get_next_id(transactions),
             'date': str(data_lcto),
@@ -215,6 +230,7 @@ elif menu == '💸 Transações':
             'origin': origem_nome,
             'invoice_date': invoice_date
         }
+
         transactions.append(nova_tx)
 
         if origem == 'Conta':
@@ -234,6 +250,7 @@ elif menu == '💸 Transações':
         st.dataframe(df.sort_values('date', ascending=False))
     else:
         st.info('Nenhuma transação ainda.')
+
 
 # ================= RECORRÊNCIAS =================
 elif menu == '🔁 Recorrências':
@@ -329,6 +346,7 @@ elif menu == '📤 Exportar / Importar':
                 df_new['id'] = range(1, len(df_new) + 1)
                 save_json(FILES[tabela_tipo], df_new.to_dict(orient='records'))
                 st.warning(f'{tabela_tipo} substituído ({len(df_new)} registros).')
+
 
 
 
