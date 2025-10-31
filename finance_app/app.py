@@ -164,20 +164,65 @@ elif menu == '💸 Transações':
         categoria = st.selectbox('Categoria', categorias_nomes)
         descricao = st.text_input('Descrição')
         data_lcto = st.date_input('Data', date.today())
-        origem_nome = st.selectbox('Selecionar', cartoes_nomes if origem == 'Cartão de Crédito' else contas_nomes)
+
+        origem_nome = None
+        fatura_escolhida = None
+
+        if origem == 'Conta':
+            if contas_nomes:
+                origem_nome = st.selectbox('Selecionar Conta', contas_nomes)
+            else:
+                st.warning('Nenhuma conta cadastrada!')
+        else:
+            if cartoes_nomes:
+                origem_nome = st.selectbox('Selecionar Cartão', cartoes_nomes)
+                cartao = next((c for c in cards if c['name'] == origem_nome), None)
+                if cartao:
+                    hoje = date.today()
+                    mes_atual = hoje.month
+                    ano_atual = hoje.year
+                    fechamento = cartao['closing_day']
+                    vencimento = cartao['due_day']
+
+                    # Determina fatura atual e próxima
+                    if hoje.day <= fechamento:
+                        fatura_atual = date(ano_atual, mes_atual, vencimento)
+                        fatura_prox = (date(ano_atual + (1 if mes_atual == 12 else 0),
+                                            1 if mes_atual == 12 else mes_atual + 1,
+                                            vencimento))
+                    else:
+                        fatura_atual = (date(ano_atual + (1 if mes_atual == 12 else 0),
+                                             1 if mes_atual == 12 else mes_atual + 1,
+                                             vencimento))
+                        fatura_prox = (date(ano_atual + (1 if mes_atual >= 11 else 0),
+                                            1 if mes_atual >= 11 else mes_atual + 2,
+                                            vencimento))
+
+                    faturas = {
+                        f'Fatura Atual ({fatura_atual.strftime(\"%b/%Y\")})': fatura_atual.strftime('%Y-%m-%d'),
+                        f'Próxima Fatura ({fatura_prox.strftime(\"%b/%Y\")})': fatura_prox.strftime('%Y-%m-%d')
+                    }
+                    fatura_escolhida = st.selectbox('Selecione a Fatura', list(faturas.keys()))
+            else:
+                st.warning('Nenhum cartão cadastrado!')
+
         enviar = st.form_submit_button('Salvar')
 
-    if enviar:
+    if enviar and origem_nome:
         amount = valor if tipo == 'Receita' else -valor
-        transactions.append({
+        invoice_date = faturas[fatura_escolhida] if fatura_escolhida else None
+        nova_tx = {
             'id': get_next_id(transactions),
             'date': str(data_lcto),
             'type': tipo.lower(),
             'category': categoria,
             'description': descricao,
             'amount': amount,
-            'origin': origem_nome
-        })
+            'origin': origem_nome,
+            'invoice_date': invoice_date
+        }
+        transactions.append(nova_tx)
+
         if origem == 'Conta':
             conta = next(a for a in accounts if a['name'] == origem_nome)
             conta['balance'] += amount
@@ -186,17 +231,13 @@ elif menu == '💸 Transações':
             cartao = next(c for c in cards if c['name'] == origem_nome)
             cartao['invoice'] += abs(amount)
             save_json(FILES['cards'], cards)
+
         save_json(FILES['transactions'], transactions)
-        st.success('Transação salva!')
+        st.success('Transação salva com sucesso!')
 
     if transactions:
         df = pd.DataFrame(transactions)
         st.dataframe(df.sort_values('date', ascending=False))
-        del_id = st.selectbox('Excluir transação ID', df['id'])
-        if st.button('Excluir'):
-            transactions = [t for t in transactions if t['id'] != del_id]
-            save_json(FILES['transactions'], transactions)
-            st.warning('Transação removida!')
     else:
         st.info('Nenhuma transação ainda.')
 
@@ -294,3 +335,4 @@ elif menu == '📤 Exportar / Importar':
                 df_new['id'] = range(1, len(df_new) + 1)
                 save_json(FILES[tabela_tipo], df_new.to_dict(orient='records'))
                 st.warning(f'{tabela_tipo} substituído ({len(df_new)} registros).')
+
