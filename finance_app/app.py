@@ -53,6 +53,17 @@ def next_id(items): return (max([i.get("id", 0) for i in items], default=0) + 1)
 accounts = load_json(FILES["accounts"])
 cards = load_json(FILES["cards"])
 txs = load_json(FILES["transactions"])
+
+# Garantir estrutura correta das transações
+for t in txs:
+    if "paid" not in t:
+        t["paid"] = False
+    if "origin_type" not in t:
+        t["origin_type"] = "Conta" if "invoice_date" not in t or not t["invoice_date"] else "Cartão"
+    if "parcel" not in t:
+        t["parcel"] = None
+save_json(FILES["transactions"], txs)
+
 cats = load_json(FILES["categories"])
 recs = load_json(FILES["recurrences"])
 
@@ -400,3 +411,4 @@ if not st.session_state.force_desktop:
     )
     if st.session_state.get("go_tx"):
         set_tab("tx"); st.rerun()
+
