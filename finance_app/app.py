@@ -352,23 +352,28 @@ st.markdown("<button class='fab' onclick='window.parent.postMessage({type:\"stre
 # pequeno hack: botão leva para aba de transações
 st.session_state.tab = st.session_state.tab  # no-op
 
+# -------------------- FLOAT ACTION BUTTON --------------------
+st.markdown(
+    "<button class='fab' onclick=\"window.parent.postMessage({type:'streamlit:setComponentValue',value:'tx'},'*')\">+ Lançar</button>",
+    unsafe_allow_html=True
+)
+
 # -------------------- BOTTOM NAV --------------------
-home_cls = "navbtn active" if tab=="home" else "navbtn"
-tx_cls   = "navbtn active" if tab=="tx" else "navbtn"
-wal_cls  = "navbtn active" if tab=="wallet" else "navbtn"
-set_cls  = "navbtn active" if tab=="settings" else "navbtn"
-nav_html = f"""
+nav_html = """
 <div class='navbar'>
   <div class='row' style='display:flex; gap:6px;'>
-    <div style='flex:1;text-align:center;'><button class='{home_cls}' onclick="window.parent.postMessage({{tab:'home'}},'*')">🏠<br/>Home</button></div>
-    <div style='flex:1;text-align:center;'><button class='{tx_cls}' onclick="window.parent.postMessage({{tab:'tx'}},'*')">💸<br/>Transações</button></div>
-    <div style='flex:1;text-align:center;'><button class='{wal_cls}' onclick="window.parent.postMessage({{tab:'wallet'}},'*')">💳<br/>Carteira</button></div>
-    <div style='flex:1;text-align:center;'><button class='{set_cls}' onclick="window.parent.postMessage({{tab:'settings'}},'*')">⚙️<br/>Config</button></div>
+    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'home'},'*')">🏠<br/>Home</button></div>
+    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'tx'},'*')">💸<br/>Transações</button></div>
+    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'wallet'},'*')">💳<br/>Carteira</button></div>
+    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'settings'},'*')">⚙️<br/>Config</button></div>
   </div>
 </div>
 <script>
 window.addEventListener('message', (e)=>{
-  if(e.data && e.data.tab){ fetch(window.location.href, {{method:'POST', headers:{{'X-Requested-With':'XMLHttpRequest'}}}}).then(()=>{ window.parent.postMessage({{type:'streamlit:setAppState', state:{{tab:e.data.tab}}}}, '*'); } ) }
+  if(e.data && e.data.tab){
+    fetch(window.location.href, {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}})
+    .then(()=>{ window.parent.postMessage({type:'streamlit:setAppState', state:{tab:e.data.tab}}, '*'); });
+  }
 });
 </script>
 """
