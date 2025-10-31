@@ -1,0 +1,21 @@
+[
+  {"id": 1, "name": "Alimentação", "type": "expense"},
+  {"id": 2, "name": "Transporte", "type": "expense"},
+  {"id": 3, "name": "Saúde", "type": "expense"},
+  {"id": 4, "name": "Lazer", "type": "expense"},
+  {"id": 5, "name": "Moradia", "type": "expense"},
+  {"id": 6, "name": "Salário", "type": "income"},
+  {"id": 7, "name": "Investimentos", "type": "income"},
+  {"id": 8, "name": "Educação", "type": "expense"},
+  {"id": 9, "name": "Vestuário", "type": "expense"},
+  {"id": 10, "name": "Serviços Essenciais", "type": "expense"},
+  {"id": 11, "name": "Cuidados Pessoais", "type": "expense"},
+  {"id": 12, "name": "Dívidas e Empréstimos", "type": "expense"},
+  {"id": 13, "name": "Impostos e Taxas", "type": "expense"},
+  {"id": 14, "name": "Reserva Financeira", "type": "expense"},
+  {"id": 15, "name": "Manutenção do Veículo", "type": "expense"},
+  {"id": 16, "name": "Assinaturas e Serviços Online", "type": "expense"},
+  {"id": 17, "name": "Outros", "type": "expense"},
+  {"id": 18, "name": "Renda Extra", "type": "income"},
+  {"id": 19, "name": "Bônus e 13º Salário", "type": "income"}
+]
