@@ -185,6 +185,12 @@ st.markdown("<div class='small'>Finance App • Híbrido</div>", unsafe_allow_ht
 # ===================== HOME =====================
 if st.session_state.tab == "home":
     df = pd.DataFrame(txs)
+    # garantir colunas obrigatórias
+    for col in ["id","date","origin_type","origin","type","category","description","amount","invoice_date","parcel","paid"]:
+        if col not in df.columns:
+            df[col] = None
+    df_pend = df[~df["paid"].fillna(False)].copy()
+
     total_accounts = sum(a["balance"] for a in accounts) if accounts else 0.0
     # fatura do mês atual (pendentes de cartão)
     today = date.today()
@@ -278,7 +284,13 @@ elif st.session_state.tab == "tx":
     st.subheader("Pendentes")
     if txs:
         df = pd.DataFrame(txs)
-        df_pend = df[~df["paid"]].copy()
+        # garantir colunas obrigatórias
+        for col in ["id","date","origin_type","origin","type","category","description","amount","invoice_date","parcel","paid"]:
+            if col not in df.columns:
+                df[col] = None
+        df_pend = df[~df["paid"].fillna(False)].copy()
+
+     
         if not df_pend.empty:
             show = df_pend[["id","date","origin_type","origin","type","category","description","amount","invoice_date","parcel"]]\
                 .sort_values("date", ascending=False)
@@ -411,4 +423,5 @@ if not st.session_state.force_desktop:
     )
     if st.session_state.get("go_tx"):
         set_tab("tx"); st.rerun()
+
 
