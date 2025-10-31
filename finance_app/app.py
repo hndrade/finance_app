@@ -3,29 +3,34 @@ import json, os
 import pandas as pd
 from datetime import date, datetime
 
-# -------------------- CONFIG & THEME (iOS-like) --------------------
+# ===================== CONFIG GERAL =====================
 st.set_page_config(page_title="Finance App", layout="wide")
+
 IOS_CSS = """
 <style>
 :root { --bg:#f7f7f8; --card:#ffffff; --txt:#111; --muted:#6b7280; --primary:#007aff; --danger:#ff3b30; --success:#34c759; }
-html,body .block-container{padding-top:0.6rem; padding-bottom:5.5rem; }
-[data-testid="stSidebar"] { display:none; } /* sem sidebar */
-button[kind="secondary"]{border-radius:14px;}
+html,body .block-container{padding-top:0.6rem; padding-bottom:5.5rem;}
+/* Estilo iOS-like */
+[data-testid="stSidebarNav"] { display:none; }
 div[data-testid="stMetric"] { background:var(--card); border-radius:16px; padding:10px 12px; border:1px solid #e5e7eb; }
-.css-1kyxreq, .st-emotion-cache-1kyxreq{font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial;}
-/* bottom nav */
+.card { background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:12px; }
+.small { font-size:12px; color:var(--muted); }
+.table-compact td, .table-compact th{ padding:4px 6px !important; font-size:12px; }
+/* Barra inferior (mobile) */
 .navbar { position:fixed; bottom:0; left:0; right:0; background:var(--card); border-top:1px solid #e5e7eb; padding:8px 10px; }
 .navbtn{width:100%; background:transparent; border:none; padding:6px 0; color:var(--muted); font-size:13px;}
 .navbtn.active{color:var(--primary); font-weight:600;}
 .fab { position:fixed; right:16px; bottom:76px; background:var(--primary); color:white; border:none; border-radius:24px; padding:12px 16px; font-weight:600; }
-.card { background:var(--card); border:1px solid #e5e7eb; border-radius:16px; padding:12px; }
-.small { font-size:12px; color:var(--muted); }
-.table-compact td, .table-compact th{ padding:4px 6px !important; font-size:12px; }
+/* Desktop refinado */
+@media (min-width: 992px){
+  html,body .block-container{padding-bottom:2rem;}
+  .navbar, .fab { display:none; }
+}
 </style>
 """
 st.markdown(IOS_CSS, unsafe_allow_html=True)
 
-# -------------------- FILES & STORAGE --------------------
+# ===================== ARMAZENAMENTO =====================
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 FILES = {
@@ -45,14 +50,13 @@ def save_json(path, data):
 
 def next_id(items): return (max([i.get("id", 0) for i in items], default=0) + 1)
 
-# load
 accounts = load_json(FILES["accounts"])
 cards = load_json(FILES["cards"])
 txs = load_json(FILES["transactions"])
 cats = load_json(FILES["categories"])
 recs = load_json(FILES["recurrences"])
 
-# defaults
+# categorias padrão
 if not cats:
     cats = [
         {"id":1,"name":"Alimentação","type":"expense"},
@@ -64,12 +68,15 @@ if not cats:
         {"id":7,"name":"Investimentos","type":"income"},
     ]; save_json(FILES["categories"], cats)
 
-# -------------------- NAV STATE --------------------
-if "tab" not in st.session_state: st.session_state.tab = "home"
-def set_tab(t): st.session_state.tab = t
+# ===================== STATE & HELPERS =====================
+if "tab" not in st.session_state: st.session_state.tab = "home"  # home | tx | wallet | settings
+if "compact" not in st.session_state: st.session_state.compact = True  # mobile compacto por padrão
+if "force_desktop" not in st.session_state: st.session_state.force_desktop = False
 
-# -------------------- HELPERS --------------------
-def month_label(dt:date)->str: return datetime(dt.year, dt.month, 1).strftime("%Y-%m")
+def set_tab(tab_name:str):
+    st.session_state.tab = tab_name
+
+def money(x): return f"R$ {x:,.2f}"
 
 def compute_month_series(df:pd.DataFrame)->pd.DataFrame:
     if df.empty: return pd.DataFrame({"month":[],"amount":[],"saldo":[]})
@@ -80,12 +87,10 @@ def compute_month_series(df:pd.DataFrame)->pd.DataFrame:
     g["month"] = g["month"].astype(str)
     return g
 
-def money(x): return f"R$ {x:,.2f}"
-
 def card_invoice_options(card):
     today = date.today()
     closing = int(card["closing_day"]); due = int(card["due_day"])
-    # se ainda não fechou no mês, fatura atual vence este mês; senão, mês seguinte
+    # Se ainda não fechou, fatura do mês corrente; senão, próximo mês
     if today.day <= closing:
         cur = date(today.year, today.month, due)
     else:
@@ -99,11 +104,11 @@ def card_invoice_options(card):
     }
     return labels
 
-def add_tx(origin_type, origin_name, kind, category, desc, d_ref, value, paid=False, invoice_date=None, parcels=1, card_due_day=None):
-    """Registra 1..N transações. Para cartão, value é o total e será fatiado em parcelas."""
+def add_tx(origin_type, origin_name, kind, category, desc, d_ref, value,
+           paid=False, invoice_date=None, parcels=1, card_due_day=None):
+    """Cria 1..N transações. Para cartão, fatia em parcelas por fatura."""
     global txs, accounts, cards
     if origin_type == "Conta":
-        # para conta: não mexe no saldo agora se pendente; só ao marcar paga
         amount = value if kind=="income" else -value
         txs.append({
             "id": next_id(txs), "date": str(d_ref), "type": kind, "category": category, "description": desc,
@@ -111,9 +116,7 @@ def add_tx(origin_type, origin_name, kind, category, desc, d_ref, value, paid=Fa
         })
         save_json(FILES["transactions"], txs)
     else:
-        # cartão: cria N parcelas, sem mexer no saldo de conta; controla por invoice_date
         per = round(value/parcels, 2)
-        # base invoice_date vem do seletor; se None, calcula fatura atual
         card = next(c for c in cards if c["name"] == origin_name)
         base_inv = invoice_date or list(card_invoice_options(card).values())[0]
         y = int(base_inv[:4]); m = int(base_inv[5:7])
@@ -132,8 +135,8 @@ def add_tx(origin_type, origin_name, kind, category, desc, d_ref, value, paid=Fa
 
 def pay_transactions(ids, paying_account=None):
     """Marca como pagas e abate saldos:
-       - Conta: aplica amount no saldo no momento do pagamento (uma vez).
-       - Cartão: exige paying_account, debita conta pelo valor absoluto e marca tx paga.
+       - Conta: aplica amount no saldo ao pagar.
+       - Cartão: exige paying_account; debita a conta pelo valor (amount negativo).
     """
     global txs, accounts
     acc = None
@@ -143,39 +146,49 @@ def pay_transactions(ids, paying_account=None):
         tx = next(t for t in txs if t["id"]==tid)
         if tx["paid"]: continue
         if tx["origin_type"]=="Conta":
-            acc = next(a for a in accounts if a["name"]==tx["origin"])
-            acc["balance"] += tx["amount"]  # amount já é negativo p/ despesa
+            accc = next(a for a in accounts if a["name"]==tx["origin"])
+            accc["balance"] += tx["amount"]  # aplica (negativo para despesa)
         else:
             if not acc: continue
-            acc["balance"] += tx["amount"]  # despesa cartão: amount negativo -> reduz saldo da conta ao pagar
+            acc["balance"] += tx["amount"]  # despesa cartão: amount negativo -> reduz saldo
         tx["paid"] = True
     save_json(FILES["accounts"], accounts)
     save_json(FILES["transactions"], txs)
 
-# -------------------- HEADER --------------------
-st.markdown("<div class='small'>Finance App • Mobile</div>", unsafe_allow_html=True)
+# ===================== LAYOUT: SIDEBAR (DESKTOP) =====================
+# Toggle para modo compacto x desktop
+with st.sidebar:
+    st.markdown("### ⚙️ Exibição")
+    st.session_state.compact = st.toggle("Modo compacto (mobile)", value=st.session_state.compact)
+    st.session_state.force_desktop = st.toggle("Forçar layout desktop", value=st.session_state.force_desktop)
+    st.markdown("---")
+    # Navegação desktop
+    if st.session_state.force_desktop:
+        tab_map = {"🏠 Dashboard":"home","💸 Transações":"tx","💳 Carteira":"wallet","⚙️ Configurações":"settings"}
+        pick = st.radio("Navegação", list(tab_map.keys()), index=list(tab_map.values()).index(st.session_state.tab))
+        set_tab(tab_map[pick])
 
-# -------------------- TABS --------------------
-tab = st.session_state.tab
+# ===================== HEADER =====================
+st.markdown("<div class='small'>Finance App • Híbrido</div>", unsafe_allow_html=True)
 
-# -------------------- DASHBOARD --------------------
-if tab == "home":
-    # KPIs
+# ===================== HOME =====================
+if st.session_state.tab == "home":
     df = pd.DataFrame(txs)
     total_accounts = sum(a["balance"] for a in accounts) if accounts else 0.0
-    # faturas abertas (somente cartão, pendentes por invoice do mês atual)
+    # fatura do mês atual (pendentes de cartão)
     today = date.today()
     this_month = f"{today.year}-{today.month:02d}"
     open_invoices = 0.0
-    if not df.empty:
-        if "invoice_date" in df.columns:
-            open_invoices = df[(df["origin_type"]=="Cartão") & (~df["paid"]) & (df["invoice_date"].str[:7]==this_month)]["amount"].abs().sum()
+    if not df.empty and "invoice_date" in df.columns:
+        mask = (df.get("origin_type","")=="Cartão") & (~df["paid"]) & (df["invoice_date"].str[:7]==this_month)
+        open_invoices = df[mask]["amount"].abs().sum()
+
     col1, col2, col3 = st.columns(3)
     col1.metric("Saldo Contas", money(total_accounts))
     col2.metric("Faturas do mês", money(open_invoices))
-    proj = total_accounts - open_invoices
-    col3.metric("Saldo Projetado", money(proj))
+    col3.metric("Saldo Projetado", money(total_accounts - open_invoices))
 
+    # Evolução do saldo
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Evolução do Saldo Mensal")
     if not df.empty:
@@ -188,6 +201,7 @@ if tab == "home":
         st.info("Sem lançamentos ainda.")
     st.markdown("</div>", unsafe_allow_html=True)
 
+    # % por categoria
     st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Gastos por Categoria (%)")
     if not df.empty:
@@ -195,7 +209,8 @@ if tab == "home":
         if not exp.empty:
             cat = exp.groupby("category")["amount"].sum().abs().reset_index()
             cat["percent"] = (cat["amount"]/cat["amount"].sum()*100).round(1)
-            st.dataframe(cat[["category","percent"]].sort_values("percent", ascending=False), use_container_width=True)
+            st.dataframe(cat[["category","percent"]].sort_values("percent", ascending=False),
+                         use_container_width=True, height=(220 if st.session_state.compact else 300))
             st.bar_chart(cat.set_index("category")["percent"])
         else:
             st.info("Sem despesas até o momento.")
@@ -203,10 +218,9 @@ if tab == "home":
         st.info("Sem lançamentos ainda.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------- TRANSAÇÕES --------------------
-elif tab == "tx":
+# ===================== TRANSAÇÕES =====================
+elif st.session_state.tab == "tx":
     st.subheader("Novo Lançamento")
-    colA, colB = st.columns(2)
     with st.form("quick_tx"):
         tipo = st.selectbox("Tipo", ["Despesa","Receita"], index=0)
         origem_tipo = st.radio("Origem", ["Conta","Cartão"], horizontal=True)
@@ -217,27 +231,34 @@ elif tab == "tx":
         parcelas = 1
         invoice_map = None
         sel_origin = None
+
         if origem_tipo=="Conta":
             sel_origin = st.selectbox("Conta", [a["name"] for a in accounts] or ["(Cadastre uma conta)"])
         else:
             sel_origin = st.selectbox("Cartão", [c["name"] for c in cards] or ["(Cadastre um cartão)"])
-            if tipo=="Despesa" and cards:
+            if tipo=="Despesa" and cards and sel_origin in [c["name"] for c in cards]:
                 card = next((c for c in cards if c["name"]==sel_origin), None)
                 parcelas = st.number_input("Parcelas", min_value=1, max_value=48, value=1, step=1)
                 invoice_map = card_invoice_options(card) if card else None
-                inv_label = st.selectbox("Fatura", list(invoice_map.keys()) if invoice_map else [])
+                if invoice_map:
+                    inv_label = st.selectbox("Fatura", list(invoice_map.keys()))
+                else:
+                    inv_label = None
+            else:
+                inv_label = None
+
         submit = st.form_submit_button("Salvar")
 
     if submit:
         if origem_tipo=="Conta":
             add_tx("Conta", sel_origin, "income" if tipo=="Receita" else "expense",
                    categoria, desc, data_ref, valor, paid=False)
-            st.success("Lançamento criado (pendente). Marque como pago quando efetivar.")
+            st.success("Lançamento criado (pendente).")
         else:
-            if not cards:
-                st.error("Cadastre um cartão.")
+            if not cards or sel_origin not in [c["name"] for c in cards]:
+                st.error("Cadastre um cartão válido.")
             else:
-                inv_date = invoice_map[inv_label] if invoice_map else None
+                inv_date = invoice_map[inv_label] if invoice_map and inv_label else None
                 add_tx("Cartão", sel_origin, "expense", categoria, desc, data_ref, valor,
                        paid=False, invoice_date=inv_date, parcels=int(parcelas))
                 st.success(f"Despesa no cartão registrada ({parcelas} parcela(s)).")
@@ -248,14 +269,14 @@ elif tab == "tx":
         df = pd.DataFrame(txs)
         df_pend = df[~df["paid"]].copy()
         if not df_pend.empty:
-            # compact view
-            show = df_pend[["id","date","origin_type","origin","type","category","description","amount","invoice_date","parcel"]].sort_values("date", ascending=False)
-            st.dataframe(show, use_container_width=True, height=260)
+            show = df_pend[["id","date","origin_type","origin","type","category","description","amount","invoice_date","parcel"]]\
+                .sort_values("date", ascending=False)
+            st.dataframe(show, use_container_width=True, height=(260 if st.session_state.compact else 380))
             ids_to_pay = st.multiselect("Selecionar IDs para pagar", show["id"].tolist())
-            pay_col1, pay_col2 = st.columns(2)
-            with pay_col1:
-                conta_pagto = st.selectbox("Conta para pagar", [a["name"] for a in accounts])
-            with pay_col2:
+            colp1, colp2 = st.columns(2)
+            with colp1:
+                conta_pagto = st.selectbox("Conta para pagar", [a["name"] for a in accounts] or ["(Cadastre uma conta)"])
+            with colp2:
                 if st.button("Pagar selecionados ✅"):
                     pay_transactions(ids_to_pay, paying_account=conta_pagto)
                     st.rerun()
@@ -271,12 +292,12 @@ elif tab == "tx":
         df_paid = df[df["paid"]].copy().sort_values("date", ascending=False).head(20)
         if not df_paid.empty:
             st.dataframe(df_paid[["id","date","origin_type","origin","type","category","description","amount","invoice_date","parcel"]],
-                         use_container_width=True, height=260)
+                         use_container_width=True, height=(260 if st.session_state.compact else 380))
         else:
             st.info("Nada pago ainda.")
 
-# -------------------- CONTAS / CARTÕES --------------------
-elif tab == "wallet":
+# ===================== CARTEIRA (CONTAS/CARTÕES) =====================
+elif st.session_state.tab == "wallet":
     st.subheader("Contas")
     with st.form("new_acc"):
         n = st.text_input("Nome")
@@ -285,8 +306,7 @@ elif tab == "wallet":
             accounts.append({"id":next_id(accounts),"name":n,"balance":bal})
             save_json(FILES["accounts"], accounts); st.success("Conta criada."); st.rerun()
     if accounts:
-        df = pd.DataFrame(accounts)
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(pd.DataFrame(accounts), use_container_width=True)
     else:
         st.info("Nenhuma conta.")
 
@@ -301,13 +321,12 @@ elif tab == "wallet":
             cards.append({"id":next_id(cards),"name":n,"limit":limitv,"closing_day":int(closing),"due_day":int(due)})
             save_json(FILES["cards"], cards); st.success("Cartão criado."); st.rerun()
     if cards:
-        dfc = pd.DataFrame(cards)
-        st.dataframe(dfc, use_container_width=True)
+        st.dataframe(pd.DataFrame(cards), use_container_width=True)
     else:
         st.info("Nenhum cartão.")
 
-# -------------------- CONFIG / CATEGORIAS / IMPORT-EXPORT --------------------
-elif tab == "settings":
+# ===================== CONFIG (CATEGORIAS / IMPORT-EXPORT) =====================
+elif st.session_state.tab == "settings":
     st.subheader("Categorias")
     with st.form("new_cat"):
         name = st.text_input("Nome da categoria")
@@ -347,34 +366,37 @@ elif tab == "settings":
                 save_json(FILES[target], df_new.to_dict(orient="records"))
             st.success("Importação concluída."); st.rerun()
 
-# -------------------- FLOAT ACTION BUTTON --------------------
-st.markdown("<button class='fab' onclick='window.parent.postMessage({type:\"streamlit:setComponentValue\",value:\"tx\"},\"*\")'>+ Lançar</button>", unsafe_allow_html=True)
-# pequeno hack: botão leva para aba de transações
-st.session_state.tab = st.session_state.tab  # no-op
+# ===================== NAV MOBILE (SEM JS) =====================
+# Só desenha barra inferior se NÃO estiver em modo desktop forçado
+if not st.session_state.force_desktop:
+    home_cls = "navbtn active" if st.session_state.tab=="home" else "navbtn"
+    tx_cls   = "navbtn active" if st.session_state.tab=="tx" else "navbtn"
+    wal_cls  = "navbtn active" if st.session_state.tab=="wallet" else "navbtn"
+    set_cls  = "navbtn active" if st.session_state.tab=="settings" else "navbtn"
 
-# -------------------- FLOAT ACTION BUTTON --------------------
-st.markdown(
-    "<button class='fab' onclick=\"window.parent.postMessage({type:'streamlit:setComponentValue',value:'tx'},'*')\">+ Lançar</button>",
-    unsafe_allow_html=True
-)
+    # Desenha botões genuínos que mudam session_state; sem JS
+    c = st.container()
+    with c:
+        st.markdown("<div class='navbar'>", unsafe_allow_html=True)
+        colA, colB, colC, colD = st.columns(4)
+        with colA:
+            if st.button("🏠\nHome", use_container_width=True):
+                set_tab("home"); st.rerun()
+        with colB:
+            if st.button("💸\nTransações", use_container_width=True):
+                set_tab("tx"); st.rerun()
+        with colC:
+            if st.button("💳\nCarteira", use_container_width=True):
+                set_tab("wallet"); st.rerun()
+        with colD:
+            if st.button("⚙️\nConfig", use_container_width=True):
+                set_tab("settings"); st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------- BOTTOM NAV --------------------
-nav_html = """
-<div class='navbar'>
-  <div class='row' style='display:flex; gap:6px;'>
-    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'home'},'*')">🏠<br/>Home</button></div>
-    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'tx'},'*')">💸<br/>Transações</button></div>
-    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'wallet'},'*')">💳<br/>Carteira</button></div>
-    <div style='flex:1;text-align:center;'><button class='navbtn' onclick="window.parent.postMessage({tab:'settings'},'*')">⚙️<br/>Config</button></div>
-  </div>
-</div>
-<script>
-window.addEventListener('message', (e)=>{
-  if(e.data && e.data.tab){
-    fetch(window.location.href, {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}})
-    .then(()=>{ window.parent.postMessage({type:'streamlit:setAppState', state:{tab:e.data.tab}}, '*'); });
-  }
-});
-</script>
-"""
-st.markdown(nav_html, unsafe_allow_html=True)
+    # Botão flutuante -> Transações
+    st.markdown(
+        "<form action='#' method='get'><button class='fab' name='go_tx' value='1'>+ Lançar</button></form>",
+        unsafe_allow_html=True
+    )
+    if st.session_state.get("go_tx"):
+        set_tab("tx"); st.rerun()
