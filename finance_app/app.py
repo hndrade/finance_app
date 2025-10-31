@@ -78,6 +78,176 @@ if menu == '📈 Dashboard':
     else:
         st.info('Nenhum dado ainda.')
 
+# ================= CONTAS =================
+elif menu == '🏦 Contas':
+    st.subheader('Gerenciamento de Contas')
+    with st.form('nova_conta'):
+        nome = st.text_input('Nome da Conta')
+        saldo = st.number_input('Saldo Inicial', step=0.01, value=0.0)
+        criar = st.form_submit_button('Adicionar Conta')
+        if criar and nome:
+            accounts.append({'id': get_next_id(accounts), 'name': nome, 'balance': saldo})
+            save_json(FILES['accounts'], accounts)
+            st.success('Conta criada!')
+
+    if accounts:
+        df_acc = pd.DataFrame(accounts)
+        st.dataframe(df_acc)
+        editar_id = st.selectbox('Selecione conta para editar/excluir', df_acc['id'])
+        conta = next(a for a in accounts if a['id'] == editar_id)
+        novo_nome = st.text_input('Nome', conta['name'])
+        novo_saldo = st.number_input('Saldo', value=float(conta['balance']))
+        if st.button('Salvar Alterações'):
+            conta['name'] = novo_nome
+            conta['balance'] = novo_saldo
+            save_json(FILES['accounts'], accounts)
+            st.success('Atualizado!')
+        if st.button('Excluir Conta'):
+            accounts = [a for a in accounts if a['id'] != editar_id]
+            save_json(FILES['accounts'], accounts)
+            st.warning('Conta removida!')
+    else:
+        st.info('Nenhuma conta cadastrada.')
+
+# ================= CARTÕES =================
+elif menu == '💳 Cartões':
+    st.subheader('Gerenciamento de Cartões de Crédito')
+    with st.form('novo_cartao'):
+        nome = st.text_input('Nome do Cartão')
+        limite = st.number_input('Limite (R$)', value=1000.0)
+        fechamento = st.number_input('Dia de Fechamento', min_value=1, max_value=28, value=10)
+        vencimento = st.number_input('Dia de Vencimento', min_value=1, max_value=28, value=20)
+        criar = st.form_submit_button('Adicionar')
+        if criar and nome:
+            cards.append({
+                'id': get_next_id(cards),
+                'name': nome,
+                'limit': limite,
+                'closing_day': fechamento,
+                'due_day': vencimento,
+                'invoice': 0
+            })
+            save_json(FILES['cards'], cards)
+            st.success('Cartão adicionado!')
+
+    if cards:
+        df_cards = pd.DataFrame(cards)
+        st.dataframe(df_cards)
+        editar_id = st.selectbox('Selecione cartão', df_cards['id'])
+        card = next(c for c in cards if c['id'] == editar_id)
+        novo_nome = st.text_input('Nome', card['name'])
+        novo_limite = st.number_input('Limite', value=float(card['limit']))
+        novo_fech = st.number_input('Fechamento', min_value=1, max_value=28, value=int(card['closing_day']))
+        novo_venc = st.number_input('Vencimento', min_value=1, max_value=28, value=int(card['due_day']))
+        if st.button('Salvar Cartão'):
+            card.update({'name': novo_nome, 'limit': novo_limite, 'closing_day': novo_fech, 'due_day': novo_venc})
+            save_json(FILES['cards'], cards)
+            st.success('Cartão atualizado!')
+        if st.button('Excluir Cartão'):
+            cards = [c for c in cards if c['id'] != editar_id]
+            save_json(FILES['cards'], cards)
+            st.warning('Cartão removido!')
+    else:
+        st.info('Nenhum cartão cadastrado.')
+
+# ================= TRANSAÇÕES =================
+elif menu == '💸 Transações':
+    st.subheader('Lançamentos Financeiros')
+    contas_nomes = [a['name'] for a in accounts]
+    cartoes_nomes = [c['name'] for c in cards]
+    categorias_nomes = [c['name'] for c in categories]
+
+    with st.form('nova_tx'):
+        tipo = st.selectbox('Tipo', ['Despesa', 'Receita'])
+        origem = st.radio('Origem', ['Conta', 'Cartão de Crédito'])
+        valor = st.number_input('Valor', min_value=0.01, step=0.01)
+        categoria = st.selectbox('Categoria', categorias_nomes)
+        descricao = st.text_input('Descrição')
+        data_lcto = st.date_input('Data', date.today())
+        origem_nome = st.selectbox('Selecionar', cartoes_nomes if origem == 'Cartão de Crédito' else contas_nomes)
+        enviar = st.form_submit_button('Salvar')
+
+    if enviar:
+        amount = valor if tipo == 'Receita' else -valor
+        transactions.append({
+            'id': get_next_id(transactions),
+            'date': str(data_lcto),
+            'type': tipo.lower(),
+            'category': categoria,
+            'description': descricao,
+            'amount': amount,
+            'origin': origem_nome
+        })
+        if origem == 'Conta':
+            conta = next(a for a in accounts if a['name'] == origem_nome)
+            conta['balance'] += amount
+            save_json(FILES['accounts'], accounts)
+        else:
+            cartao = next(c for c in cards if c['name'] == origem_nome)
+            cartao['invoice'] += abs(amount)
+            save_json(FILES['cards'], cards)
+        save_json(FILES['transactions'], transactions)
+        st.success('Transação salva!')
+
+    if transactions:
+        df = pd.DataFrame(transactions)
+        st.dataframe(df.sort_values('date', ascending=False))
+        del_id = st.selectbox('Excluir transação ID', df['id'])
+        if st.button('Excluir'):
+            transactions = [t for t in transactions if t['id'] != del_id]
+            save_json(FILES['transactions'], transactions)
+            st.warning('Transação removida!')
+    else:
+        st.info('Nenhuma transação ainda.')
+
+# ================= RECORRÊNCIAS =================
+elif menu == '🔁 Recorrências':
+    st.subheader('Gerenciar Despesas e Receitas Recorrentes')
+    with st.form('nova_rec'):
+        nome = st.text_input('Nome da Recorrência')
+        tipo = st.selectbox('Tipo', ['Despesa', 'Receita'])
+        valor = st.number_input('Valor', step=0.01)
+        categoria = st.selectbox('Categoria', [c['name'] for c in categories])
+        frequencia = st.selectbox('Frequência', ['Mensal', 'Semanal', 'Anual'])
+        inicio = st.date_input('Data de Início', date.today())
+        criar = st.form_submit_button('Adicionar')
+        if criar and nome:
+            recurrences.append({
+                'id': get_next_id(recurrences),
+                'name': nome,
+                'type': tipo.lower(),
+                'amount': valor,
+                'category': categoria,
+                'frequency': frequencia.lower(),
+                'start_date': str(inicio)
+            })
+            save_json(FILES['recurrences'], recurrences)
+            st.success('Recorrência adicionada!')
+
+    if recurrences:
+        df_rec = pd.DataFrame(recurrences)
+        st.dataframe(df_rec)
+        del_id = st.selectbox('Excluir recorrência ID', df_rec['id'])
+        if st.button('Excluir recorrência'):
+            recurrences = [r for r in recurrences if r['id'] != del_id]
+            save_json(FILES['recurrences'], recurrences)
+            st.warning('Recorrência removida!')
+    else:
+        st.info('Nenhuma recorrência cadastrada.')
+
+# ================= CATEGORIAS =================
+elif menu == '🏷️ Categorias':
+    st.subheader('Gerenciar Categorias')
+    with st.form('nova_cat'):
+        nome_cat = st.text_input('Nome da Categoria')
+        tipo_cat = st.selectbox('Tipo', ['Despesa', 'Receita'])
+        add = st.form_submit_button('Adicionar')
+        if add and nome_cat:
+            categories.append({'id': get_next_id(categories), 'name': nome_cat, 'type': tipo_cat.lower()})
+            save_json(FILES['categories'], categories)
+            st.success('Categoria adicionada!')
+    st.dataframe(pd.DataFrame(categories))
+
 # ================= EXPORTAÇÃO / IMPORTAÇÃO =================
 elif menu == '📤 Exportar / Importar':
     st.subheader('Download e Upload de Registros')
@@ -91,7 +261,6 @@ elif menu == '📤 Exportar / Importar':
         'recurrences': recurrences,
         'categories': categories
     }
-
     for key, data in export_data.items():
         if data:
             df_export = pd.DataFrame(data)
@@ -110,31 +279,18 @@ elif menu == '📤 Exportar / Importar':
         df_new = pd.read_csv(uploaded_file)
         st.write('Prévia dos dados:')
         st.dataframe(df_new.head())
-
         if st.button('Aplicar upload'):
             current_data = load_json(FILES[tabela_tipo])
             if acao == 'Adicionar aos existentes':
                 next_id = get_next_id(current_data)
-                for idx, row in df_new.iterrows():
-                    row_dict = row.to_dict()
-                    row_dict['id'] = next_id
+                for _, row in df_new.iterrows():
+                    r = row.to_dict()
+                    r['id'] = next_id
                     next_id += 1
-                    current_data.append(row_dict)
+                    current_data.append(r)
                 save_json(FILES[tabela_tipo], current_data)
                 st.success(f'{len(df_new)} registros adicionados a {tabela_tipo}.')
             else:
-                df_new['id'] = range(1, len(df_new)+1)
+                df_new['id'] = range(1, len(df_new) + 1)
                 save_json(FILES[tabela_tipo], df_new.to_dict(orient='records'))
-                st.warning(f'{tabela_tipo} substituído por novo conjunto ({len(df_new)} registros).')
-
-# ================= OUTROS MENUS (resumidos) =================
-elif menu == '🏦 Contas':
-    st.write('⚙️ Gerenciamento de contas — igual versão anterior')
-elif menu == '💳 Cartões':
-    st.write('⚙️ Gerenciamento de cartões — igual versão anterior')
-elif menu == '💸 Transações':
-    st.write('⚙️ Lançamentos — igual versão anterior')
-elif menu == '🔁 Recorrências':
-    st.write('⚙️ Recorrências — igual versão anterior')
-elif menu == '🏷️ Categorias':
-    st.write('⚙️ Categorias — igual versão anterior')
+                st.warning(f'{tabela_tipo} substituído ({len(df_new)} registros).')
